@@ -1,0 +1,16 @@
+.git
+.github
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.wav
+assets
+conf
+examples
+models
+data/voices
+tests
+tmp-test.wav
+uv.lock

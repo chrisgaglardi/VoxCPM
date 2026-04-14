@@ -4,3 +4,9 @@ voxcpm.egg-info
 .DS_Store
 ./pretrained_models/
 app_local.py
+.venv/
+models/
+data/voices/
+tmp-test.wav
+server.log
+server.err

@@ -73,6 +73,7 @@ Chinese Dialect: 四川话, 粤语, 吴语, 东北话, 河南话, 陕西话, 山
   - [Python API](#python-api)
   - [CLI Usage](#cli-usage)
   - [Web Demo](#web-demo)
+  - [OpenAI-Compatible API](#openai-compatible-api)
   - [Production Deployment](#-production-deployment-nano-vllm)
 - [Models & Versions](#-models--versions)
 - [Performance](#-performance)
@@ -241,6 +242,102 @@ voxcpm --help
 ```bash
 python app.py --port 8808  # then open in browser: http://localhost:8808
 ```
+
+### OpenAI-Compatible API
+
+This repo now includes a lightweight FastAPI server at `src/voxcpm/openai_server.py` with an OpenAI-style `POST /v1/audio/speech` endpoint.
+The same service also serves a browser UI at `/ui` that exposes voice design, reference cloning, prompt continuation, uploads, and advanced generation controls.
+It also includes a saved voice library with browser management at `/ui/voices`.
+
+#### Local bring-up
+
+```bash
+# 1) Install project deps
+uv sync
+
+# 2) Replace CPU torch with a CUDA wheel build
+uv pip install --python .venv/Scripts/python.exe --index-url https://download.pytorch.org/whl/cu128 --upgrade torch torchaudio
+
+# 3) Download model weights locally
+hf download openbmb/VoxCPM2 --local-dir models/VoxCPM2
+
+# 4) Start the server
+VOXCPM_MODEL=models/VoxCPM2 \
+VOXCPM_OPENAI_MODEL_NAME=voxcpm-tts \
+.venv/Scripts/python -m voxcpm.openai_server --host 0.0.0.0 --port 3017
+```
+
+Then open:
+
+```bash
+http://localhost:3017/ui
+http://localhost:3017/ui/voices
+```
+
+#### Example request
+
+```bash
+curl http://localhost:3017/v1/audio/speech \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "voxcpm-tts",
+    "input": "VoxCPM is serving through an OpenAI compatible API.",
+    "voice": "warm young woman, clear studio narration",
+    "response_format": "mp3"
+  }' \
+  --output speech.mp3
+```
+
+Supported `response_format` values: `wav`, `flac`, `pcm`, `mp3`.
+
+#### Saved voices
+
+Upload a reusable reference voice:
+
+```bash
+curl http://localhost:3017/v1/voices \
+  -F "name=Podcast Host A" \
+  -F "audio=@reference.wav"
+```
+
+Then generate using the saved name:
+
+```bash
+curl http://localhost:3017/v1/audio/speech \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "voxcpm-tts",
+    "input": "This request is using a saved voice library entry.",
+    "saved_voice": "Podcast Host A",
+    "response_format": "mp3"
+  }' \
+  --output speech.mp3
+```
+
+List, rename, and delete saved voices through `GET /v1/voices`, `PATCH /v1/voices/{voice_id}`, and `DELETE /v1/voices/{voice_id}` or use the browser page at `/ui/voices`.
+
+#### Docker
+
+Build the image:
+
+```bash
+docker build -t voxcpm-openai .
+```
+
+Run with a host-mounted model directory:
+
+```bash
+docker run --rm --gpus all \
+  -p 3017:3017 \
+  -e VOXCPM_MODEL=/models/VoxCPM2 \
+  -e VOXCPM_OPENAI_MODEL_NAME=voxcpm-tts \
+  -e VOXCPM_VOICE_LIBRARY_DIR=/data/voices \
+  -v $(pwd)/models/VoxCPM2:/models/VoxCPM2 \
+  -v $(pwd)/data/voices:/data/voices \
+  voxcpm-openai
+```
+
+Or let the container download the public model on first start by pointing `VOXCPM_MODEL` at `openbmb/VoxCPM2` and mounting a Hugging Face cache directory.
 
 ### 🚢 Production Deployment (Nano-vLLM)
 

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>VoxCPM Voice Library</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/ui/static/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="library-hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Voice Library</p>
+          <h1>Store reusable reference voices and call them by name.</h1>
+          <p class="lede">
+            Upload a reference clip once, keep it under a stable name, and use that saved voice from the studio or the API.
+          </p>
+          <div class="hero-actions">
+            <a href="/ui" class="action-primary">Open Studio</a>
+            <a href="/v1/voices" class="action-secondary" target="_blank" rel="noreferrer">Inspect Voice API</a>
+          </div>
+        </div>
+        <div class="hero-panel">
+          <div class="status-line">
+            <span class="status-dot ready"></span>
+            <span id="library-health">Voice library ready.</span>
+          </div>
+          <p class="panel-title">Workflow</p>
+          <ul class="mode-list">
+            <li><strong>Upload once</strong><span>Assign a name that stays stable for API calls.</span></li>
+            <li><strong>Manage in place</strong><span>Rename or remove voices without leaving the browser.</span></li>
+            <li><strong>Generate by name</strong><span>Pass `saved_voice` during generation instead of uploading each time.</span></li>
+          </ul>
+        </div>
+      </header>
+
+      <main class="library-workspace">
+        <section class="editor-form">
+          <p class="eyebrow">Add Voice</p>
+          <h2 class="section-title">Create a saved voice entry</h2>
+          <form id="voice-upload-form" class="stack-form">
+            <div class="field-group">
+              <label for="voice-name">Voice Name</label>
+              <input id="voice-name" name="name" type="text" maxlength="80" placeholder="Podcast Host A" required />
+            </div>
+            <div class="field-group">
+              <label for="voice-audio">Audio File</label>
+              <input id="voice-audio" name="audio" type="file" accept="audio/*" required />
+              <p class="field-note">Use a clean sample that captures the speaker identity you want to clone.</p>
+            </div>
+            <button type="submit" id="voice-upload-button" class="action-primary">Save Voice</button>
+          </form>
+        </section>
+
+        <section class="result-panel library-panel">
+          <div class="library-header">
+            <div>
+              <p class="eyebrow">Saved Voices</p>
+              <h2 class="section-title">Library entries</h2>
+            </div>
+            <p id="voice-count" class="library-count">0 voices</p>
+          </div>
+          <p id="library-status" class="result-status">Loading saved voices...</p>
+          <div id="voice-list" class="voice-list" aria-live="polite"></div>
+        </section>
+      </main>
+    </div>
+    <script src="/ui/static/voices.js"></script>
+  </body>
+</html>

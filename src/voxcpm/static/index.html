@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>VoxCPM Studio</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/ui/static/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">VoxCPM Studio</p>
+          <h1>OpenAI-style TTS, full cloning controls, one browser tab.</h1>
+          <p class="lede">
+            Drive voice design, reference cloning, prompt continuation, timing, format, and cleanup controls
+            from the same service that powers the API.
+          </p>
+          <div class="hero-actions">
+            <a href="#workspace" class="action-primary">Open Workspace</a>
+            <a href="/ui/voices" class="action-secondary">Voice Library</a>
+            <a href="/v1/models" class="action-secondary" target="_blank" rel="noreferrer">Inspect API Models</a>
+          </div>
+        </div>
+        <div class="hero-panel">
+          <div class="status-line">
+            <span class="status-dot" id="health-dot"></span>
+            <span id="health-text">Checking server health…</span>
+          </div>
+          <p class="panel-title">Modes</p>
+          <ul class="mode-list">
+            <li><strong>Voice design</strong><span>No uploaded audio. Text plus direction.</span></li>
+            <li><strong>Reference cloning</strong><span>Reference audio anchors timbre.</span></li>
+            <li><strong>Ultimate cloning</strong><span>Prompt audio plus transcript continues from source speech.</span></li>
+          </ul>
+        </div>
+      </header>
+
+      <main id="workspace" class="workspace">
+        <section class="editor-column">
+          <form id="tts-form" class="editor-form">
+            <div class="field-group major-field">
+              <label for="input">Target Text</label>
+              <textarea id="input" name="input" rows="7" placeholder="Write the text you want VoxCPM to speak." required></textarea>
+            </div>
+
+            <div class="field-grid">
+              <div class="field-group">
+                <label for="control">Voice Direction</label>
+                <textarea id="control" name="control" rows="4" placeholder="Warm young woman, clear studio narration, steady pace."></textarea>
+              </div>
+              <div class="field-group compact-stack">
+                <div class="inline-heading">
+                  <label for="saved_voice">Saved Voice</label>
+                  <a href="/ui/voices">Manage</a>
+                </div>
+                <select id="saved_voice" name="saved_voice">
+                  <option value="">No saved voice selected</option>
+                </select>
+                <p class="field-note">Optional. Uses a stored library entry as the reference voice.</p>
+
+                <label for="reference_audio">Reference Audio</label>
+                <input id="reference_audio" name="reference_audio" type="file" accept="audio/*" />
+                <p class="field-note">Optional. Use for timbre cloning when you do not want a saved voice.</p>
+
+                <label for="prompt_audio">Prompt Audio</label>
+                <input id="prompt_audio" name="prompt_audio" type="file" accept="audio/*" />
+                <p class="field-note">Optional. Use with transcript for continuation.</p>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label for="prompt_text">Prompt Transcript</label>
+              <textarea id="prompt_text" name="prompt_text" rows="3" placeholder="Required when prompt audio is set. Leave Voice Direction empty in continuation mode."></textarea>
+            </div>
+
+            <section class="tuning-band">
+              <div class="field-group">
+                <label for="model">Model</label>
+                <select id="model" name="model"></select>
+              </div>
+              <div class="field-group">
+                <label for="response_format">Format</label>
+                <select id="response_format" name="response_format">
+                  <option value="mp3">MP3</option>
+                  <option value="wav">WAV</option>
+                  <option value="flac">FLAC</option>
+                  <option value="pcm">PCM</option>
+                </select>
+              </div>
+              <div class="field-group">
+                <label for="speed">Speed</label>
+                <input id="speed" name="speed" type="number" min="0.25" max="4" step="0.05" value="1.0" />
+              </div>
+            </section>
+
+            <details class="advanced-panel">
+              <summary>Advanced Controls</summary>
+              <div class="advanced-grid">
+                <div class="field-group">
+                  <label for="cfg_value">CFG Value</label>
+                  <input id="cfg_value" name="cfg_value" type="number" min="0.1" max="10" step="0.1" value="2.0" />
+                </div>
+                <div class="field-group">
+                  <label for="inference_timesteps">Inference Timesteps</label>
+                  <input id="inference_timesteps" name="inference_timesteps" type="number" min="1" max="100" step="1" value="10" />
+                </div>
+                <div class="field-group">
+                  <label for="max_len">Max Length</label>
+                  <input id="max_len" name="max_len" type="number" min="32" max="16384" step="32" value="4096" />
+                </div>
+                <label class="toggle">
+                  <input id="normalize" name="normalize" type="checkbox" />
+                  <span>Normalize text</span>
+                </label>
+                <label class="toggle">
+                  <input id="denoise" name="denoise" type="checkbox" />
+                  <span>Denoise uploaded audio</span>
+                </label>
+              </div>
+            </details>
+
+            <div class="example-strip">
+              <button type="button" class="example-chip" data-example="narrator">Narrator</button>
+              <button type="button" class="example-chip" data-example="clone">Clone</button>
+              <button type="button" class="example-chip" data-example="dialect">Dialect</button>
+            </div>
+
+            <div class="submit-row">
+              <button type="submit" id="generate-button" class="action-primary">Generate Audio</button>
+              <p id="mode-indicator" class="mode-indicator">Mode: voice design</p>
+            </div>
+          </form>
+        </section>
+
+        <aside class="result-column">
+          <section class="result-panel">
+            <p class="eyebrow">Output</p>
+            <h2>Generation result</h2>
+            <p id="result-status" class="result-status">Ready. Submit the form to generate audio.</p>
+            <audio id="audio-player" controls preload="none"></audio>
+            <a id="download-link" class="action-secondary disabled" href="#" download>Download audio</a>
+          </section>
+
+          <section class="result-panel compact">
+            <p class="eyebrow">Working Notes</p>
+            <ul class="notes-list">
+              <li>Leave both uploads empty for pure voice design.</li>
+              <li>Use a saved voice or a reference upload for controllable cloning.</li>
+              <li>Use reference audio alone for controllable cloning.</li>
+              <li>Use prompt audio plus prompt transcript for continuation mode.</li>
+              <li>Do not combine voice direction with prompt continuation.</li>
+            </ul>
+          </section>
+        </aside>
+      </main>
+    </div>
+    <script src="/ui/static/app.js"></script>
+  </body>
+</html>

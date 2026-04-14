@@ -76,6 +76,9 @@ include = ["voxcpm*"]
 [tool.setuptools.package-dir]
 "" = "src"
 
+[tool.setuptools.package-data]
+voxcpm = ["static/*"]
+
 [tool.setuptools_scm]
 version_scheme = "post-release"
 
