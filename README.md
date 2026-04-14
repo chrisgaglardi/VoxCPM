@@ -314,6 +314,20 @@ curl http://localhost:3017/v1/audio/speech \
   --output speech.mp3
 ```
 
+For standard OpenAI-compatible clients that only send `voice`, the server also checks whether `voice` exactly matches a saved voice name. If it does, that saved voice is used as the reference audio instead of treating `voice` as a style description.
+
+```bash
+curl http://localhost:3017/v1/audio/speech \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "voxcpm-tts",
+    "input": "This request only uses the standard OpenAI voice field.",
+    "voice": "Podcast Host A",
+    "response_format": "mp3"
+  }' \
+  --output speech.mp3
+```
+
 List, rename, and delete saved voices through `GET /v1/voices`, `PATCH /v1/voices/{voice_id}`, and `DELETE /v1/voices/{voice_id}` or use the browser page at `/ui/voices`.
 
 #### Docker

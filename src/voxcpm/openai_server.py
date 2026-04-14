@@ -184,6 +184,23 @@ class VoiceLibrary:
                     return str(file_path)
         raise FileNotFoundError(f"Saved voice '{name}' was not found")
 
+    def resolve_exact_name(self, name: str) -> str | None:
+        candidate = name.strip()
+        if not candidate:
+            return None
+        with self._lock:
+            entries = self._load_entries()
+            for entry in entries:
+                if entry["name"] != candidate:
+                    continue
+                file_path = self.files_dir / entry["filename"]
+                if not file_path.exists():
+                    raise FileNotFoundError(
+                        f"Saved voice '{entry['name']}' is registered but the audio file is missing"
+                    )
+                return str(file_path)
+        return None
+
     def _load_entries(self) -> list[dict[str, str]]:
         if not self.index_path.exists():
             return []
@@ -338,8 +355,20 @@ class VoxCPMOpenAIService:
             }
         ]
 
-    def _final_text(self, request: SpeechRequest) -> str:
-        control = request.control or request.instructions or request.voice
+    def _resolve_reference_audio(self, request: SpeechRequest) -> tuple[str | None, bool]:
+        if request.saved_voice:
+            return self.voice_library.resolve_name(request.saved_voice), False
+        if request.reference_audio_path:
+            return request.reference_audio_path, False
+        if request.voice:
+            matched_path = self.voice_library.resolve_exact_name(request.voice)
+            if matched_path is not None:
+                return matched_path, True
+        return None, False
+
+    def _final_text(self, request: SpeechRequest, consumed_voice_as_saved_voice: bool = False) -> str:
+        voice_control = None if consumed_voice_as_saved_voice else request.voice
+        control = request.control or request.instructions or voice_control
         if request.prompt_text and control:
             raise ValueError("control/instructions/voice cannot be combined with prompt cloning")
         if control:
@@ -353,13 +382,11 @@ class VoxCPMOpenAIService:
             )
 
         model = self.ensure_model_loaded()
-        final_text = self._final_text(request)
+        reference_audio_path, consumed_voice_as_saved_voice = self._resolve_reference_audio(request)
+        final_text = self._final_text(request, consumed_voice_as_saved_voice=consumed_voice_as_saved_voice)
         cfg_value = request.cfg_value or self.settings.default_cfg_value
         inference_timesteps = request.inference_timesteps or self.settings.default_inference_timesteps
         max_len = request.max_len or self.settings.default_max_len
-        reference_audio_path = request.reference_audio_path
-        if request.saved_voice:
-            reference_audio_path = self.voice_library.resolve_name(request.saved_voice)
 
         with self._generate_lock:
             wav = model.generate(
