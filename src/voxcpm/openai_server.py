@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import gc
 import io
 import json
 import logging
@@ -8,6 +9,7 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -17,6 +19,7 @@ from uuid import uuid4
 import librosa
 import numpy as np
 import soundfile as sf
+import torch
 import uvicorn
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
@@ -57,6 +60,8 @@ class Settings:
     load_denoiser: bool
     optimize: bool
     preload_model: bool
+    idle_unload_seconds: int
+    idle_check_interval_seconds: int
     default_cfg_value: float
     default_inference_timesteps: int
     default_max_len: int
@@ -74,6 +79,8 @@ class Settings:
             load_denoiser=_env_flag("VOXCPM_LOAD_DENOISER", False),
             optimize=_env_flag("VOXCPM_OPTIMIZE", False),
             preload_model=_env_flag("VOXCPM_PRELOAD_MODEL", True),
+            idle_unload_seconds=max(0, _env_int("VOXCPM_IDLE_UNLOAD_SECONDS", 0)),
+            idle_check_interval_seconds=max(1, _env_int("VOXCPM_IDLE_CHECK_INTERVAL_SECONDS", 15)),
             default_cfg_value=_env_float("VOXCPM_CFG_VALUE", 2.0),
             default_inference_timesteps=_env_int("VOXCPM_INFERENCE_TIMESTEPS", 10),
             default_max_len=_env_int("VOXCPM_MAX_LEN", 4096),
@@ -315,6 +322,9 @@ class VoxCPMOpenAIService:
         self._model: VoxCPM | None = None
         self._load_lock = threading.Lock()
         self._generate_lock = threading.Lock()
+        self._last_used_monotonic = time.monotonic()
+        self._idle_stop_event = threading.Event()
+        self._idle_thread: threading.Thread | None = None
 
     @property
     def accepted_model_names(self) -> set[str]:
@@ -326,10 +336,12 @@ class VoxCPMOpenAIService:
 
     def ensure_model_loaded(self) -> VoxCPM:
         if self._model is not None:
+            self._mark_used()
             return self._model
 
         with self._load_lock:
             if self._model is not None:
+                self._mark_used()
                 return self._model
 
             logger.info(
@@ -344,7 +356,74 @@ class VoxCPMOpenAIService:
                 device=self.settings.device,
             )
             logger.info("Model loaded")
+            self._mark_used()
             return self._model
+
+    def start_idle_monitor(self) -> None:
+        if self.settings.idle_unload_seconds <= 0:
+            return
+        if self._idle_thread is not None and self._idle_thread.is_alive():
+            return
+        self._idle_stop_event.clear()
+        self._idle_thread = threading.Thread(
+            target=self._idle_monitor_loop,
+            name="voxcpm-idle-monitor",
+            daemon=True,
+        )
+        self._idle_thread.start()
+
+    def shutdown(self) -> None:
+        self._idle_stop_event.set()
+        if self._idle_thread is not None:
+            self._idle_thread.join(timeout=2)
+        self._idle_thread = None
+        self.unload_model(reason="service shutdown")
+
+    def unload_model_if_idle(self, *, now: float | None = None) -> bool:
+        if self.settings.idle_unload_seconds <= 0:
+            return False
+        if self._model is None:
+            return False
+
+        current_time = time.monotonic() if now is None else now
+        idle_seconds = current_time - self._last_used_monotonic
+        if idle_seconds < self.settings.idle_unload_seconds:
+            return False
+        if self._generate_lock.locked():
+            return False
+        return self.unload_model(reason=f"idle for {int(idle_seconds)}s")
+
+    def unload_model(self, *, reason: str) -> bool:
+        if self._model is None:
+            return False
+
+        with self._load_lock:
+            if self._model is None:
+                return False
+            if self._generate_lock.locked():
+                return False
+
+            logger.info("Unloading VoxCPM model (%s)", reason)
+            model = self._model
+            self._model = None
+            del model
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                if hasattr(torch.cuda, "ipc_collect"):
+                    torch.cuda.ipc_collect()
+            logger.info("Model unloaded")
+            return True
+
+    def _mark_used(self) -> None:
+        self._last_used_monotonic = time.monotonic()
+
+    def _idle_monitor_loop(self) -> None:
+        while not self._idle_stop_event.wait(self.settings.idle_check_interval_seconds):
+            try:
+                self.unload_model_if_idle()
+            except Exception:  # pragma: no cover - defensive logging path
+                logger.exception("Idle model monitor failed")
 
     def describe_models(self) -> list[dict[str, str]]:
         return [
@@ -389,6 +468,7 @@ class VoxCPMOpenAIService:
         max_len = request.max_len or self.settings.default_max_len
 
         with self._generate_lock:
+            self._mark_used()
             wav = model.generate(
                 text=final_text,
                 prompt_wav_path=request.prompt_audio_path,
@@ -400,6 +480,7 @@ class VoxCPMOpenAIService:
                 normalize=request.normalize,
                 denoise=request.denoise,
             )
+            self._mark_used()
 
         wav = np.asarray(wav, dtype=np.float32)
         if request.speed != 1.0:
@@ -481,9 +562,13 @@ service = VoxCPMOpenAIService(SETTINGS, voice_library)
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
+    service.start_idle_monitor()
     if SETTINGS.preload_model:
         await asyncio.to_thread(service.ensure_model_loaded)
-    yield
+    try:
+        yield
+    finally:
+        await asyncio.to_thread(service.shutdown)
 
 
 app = FastAPI(
@@ -537,8 +622,13 @@ async def ui_index() -> FileResponse:
 
 
 @app.get("/healthz")
-async def healthz() -> dict[str, str | bool]:
-    return {"status": "ok", "model_loaded": service._model is not None}
+async def healthz() -> dict[str, str | bool | int]:
+    return {
+        "status": "ok",
+        "model_loaded": service._model is not None,
+        "preload_model": SETTINGS.preload_model,
+        "idle_unload_seconds": SETTINGS.idle_unload_seconds,
+    }
 
 
 @app.get("/v1/models")

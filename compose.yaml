@@ -1,0 +1,22 @@
+services:
+  voxcpm:
+    build:
+      context: .
+    image: voxcpm-openai
+    container_name: voxcpm-openai
+    restart: unless-stopped
+    ports:
+      - "3017:3017"
+    environment:
+      VOXCPM_MODEL: /models/VoxCPM2
+      VOXCPM_OPENAI_MODEL_NAME: voxcpm-tts
+      VOXCPM_VOICE_LIBRARY_DIR: /data/voices
+      VOXCPM_PRELOAD_MODEL: "false"
+      VOXCPM_IDLE_UNLOAD_SECONDS: "300"
+      VOXCPM_IDLE_CHECK_INTERVAL_SECONDS: "15"
+      VOXCPM_LOAD_DENOISER: "false"
+      VOXCPM_OPTIMIZE: "false"
+    volumes:
+      - ./models/VoxCPM2:/models/VoxCPM2
+      - ./data/voices:/data/voices
+    gpus: all

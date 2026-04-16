@@ -341,15 +341,32 @@ docker build -t voxcpm-openai .
 Run with a host-mounted model directory:
 
 ```bash
-docker run --rm --gpus all \
+docker run -d --restart unless-stopped --gpus all \
+  --name voxcpm-openai \
   -p 3017:3017 \
   -e VOXCPM_MODEL=/models/VoxCPM2 \
   -e VOXCPM_OPENAI_MODEL_NAME=voxcpm-tts \
   -e VOXCPM_VOICE_LIBRARY_DIR=/data/voices \
+  -e VOXCPM_PRELOAD_MODEL=false \
+  -e VOXCPM_IDLE_UNLOAD_SECONDS=300 \
   -v $(pwd)/models/VoxCPM2:/models/VoxCPM2 \
   -v $(pwd)/data/voices:/data/voices \
   voxcpm-openai
 ```
+
+That configuration keeps the container running across Docker/host restarts, loads the model on first request, and unloads it after 5 minutes of inactivity to free VRAM.
+
+You can also use the included Compose file:
+
+```bash
+docker compose up -d
+```
+
+Useful runtime knobs:
+
+- `VOXCPM_PRELOAD_MODEL=false` keeps the model cold until the first request.
+- `VOXCPM_IDLE_UNLOAD_SECONDS=300` unloads the model after 5 idle minutes. Set to `0` to keep it resident.
+- `VOXCPM_IDLE_CHECK_INTERVAL_SECONDS=15` controls how often the server checks for idle unload eligibility.
 
 Or let the container download the public model on first start by pointing `VOXCPM_MODEL` at `openbmb/VoxCPM2` and mounting a Hugging Face cache directory.
 
