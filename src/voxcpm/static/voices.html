@@ -41,15 +41,15 @@
         <section class="editor-form">
           <p class="eyebrow">Add Voice</p>
           <h2 class="section-title">Create a saved voice entry</h2>
-          <form id="voice-upload-form" class="stack-form">
+          <form id="voice-upload-form" class="stack-form" enctype="multipart/form-data">
             <div class="field-group">
               <label for="voice-name">Voice Name</label>
               <input id="voice-name" name="name" type="text" maxlength="80" placeholder="Podcast Host A" required />
             </div>
             <div class="field-group">
               <label for="voice-audio">Audio File</label>
-              <input id="voice-audio" name="audio" type="file" accept="audio/*" required />
-              <p class="field-note">Use a clean sample that captures the speaker identity you want to clone.</p>
+              <input id="voice-audio" name="audio" type="file" accept="audio/*,.wav,.mp3,.m4a,.aac,.flac,.ogg,.webm,.mp4,.3gp,.3g2,.caf" required />
+              <p class="field-note">Use a clean sample that captures the speaker identity you want to clone. Uploads from iPhone and Android are normalized automatically before saving.</p>
             </div>
             <button type="submit" id="voice-upload-button" class="action-primary">Save Voice</button>
           </form>

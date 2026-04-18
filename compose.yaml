@@ -8,6 +8,7 @@ services:
     ports:
       - "3017:3017"
     environment:
+      PYTHONPATH: /app/src
       VOXCPM_MODEL: /models/VoxCPM2
       VOXCPM_OPENAI_MODEL_NAME: voxcpm-tts
       VOXCPM_VOICE_LIBRARY_DIR: /data/voices
@@ -17,6 +18,7 @@ services:
       VOXCPM_LOAD_DENOISER: "false"
       VOXCPM_OPTIMIZE: "false"
     volumes:
+      - ./src:/app/src
       - ./models/VoxCPM2:/models/VoxCPM2
       - ./data/voices:/data/voices
     gpus: all

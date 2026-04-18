@@ -3,6 +3,7 @@ FROM python:3.11-slim-bookworm
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
+    PIP_DEFAULT_TIMEOUT=1000 \
     DEBIAN_FRONTEND=noninteractive \
     SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0 \
     HF_HUB_DISABLE_TELEMETRY=1 \
@@ -29,7 +30,7 @@ RUN mkdir -p /data/voices/files
 COPY pyproject.toml README.md ./
 COPY src ./src
 
-RUN pip install --index-url https://download.pytorch.org/whl/cu128 torch==2.10.0 torchaudio==2.10.0 && \
+RUN pip install --retries 10 --index-url https://download.pytorch.org/whl/cu128 torch==2.10.0 torchaudio==2.10.0 && \
     pip install . && \
     find /usr/local/lib/python3.11 -type d -name __pycache__ -prune -exec rm -rf {} +
 

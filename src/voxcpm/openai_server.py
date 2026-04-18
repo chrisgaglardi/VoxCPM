@@ -4,6 +4,7 @@ import gc
 import io
 import json
 import logging
+import mimetypes
 import os
 import shutil
 import subprocess
@@ -585,11 +586,36 @@ def _parse_bool_form(value: str | None, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _infer_upload_suffix(upload: UploadFile) -> str:
+    filename_suffix = Path(upload.filename or "").suffix.lower()
+    if filename_suffix:
+        return filename_suffix
+
+    mime_suffixes = {
+        "audio/wav": ".wav",
+        "audio/x-wav": ".wav",
+        "audio/mpeg": ".mp3",
+        "audio/mp3": ".mp3",
+        "audio/mp4": ".m4a",
+        "audio/x-m4a": ".m4a",
+        "audio/aac": ".aac",
+        "audio/ogg": ".ogg",
+        "audio/webm": ".webm",
+        "audio/flac": ".flac",
+        "audio/x-flac": ".flac",
+        "audio/3gpp": ".3gp",
+        "audio/3gpp2": ".3g2",
+        "audio/x-caf": ".caf",
+    }
+    content_type = (upload.content_type or "").strip().lower()
+    return mime_suffixes.get(content_type) or mimetypes.guess_extension(content_type) or ".bin"
+
+
 async def _save_upload(upload: UploadFile | None) -> str | None:
     if upload is None or not upload.filename:
         return None
 
-    suffix = Path(upload.filename).suffix or ".bin"
+    suffix = _infer_upload_suffix(upload)
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
         temp_path = temp_file.name
         while True:
@@ -599,6 +625,46 @@ async def _save_upload(upload: UploadFile | None) -> str | None:
             temp_file.write(chunk)
     await upload.close()
     return temp_path
+
+
+def _normalize_audio_for_voxcpm(source_path: str | None) -> str | None:
+    if source_path is None:
+        return None
+
+    ffmpeg_path = shutil.which("ffmpeg")
+    if ffmpeg_path is None:
+        return source_path
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_file:
+        output_path = temp_file.name
+
+    result = subprocess.run(
+        [
+            ffmpeg_path,
+            "-v",
+            "error",
+            "-y",
+            "-i",
+            source_path,
+            "-vn",
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            "-c:a",
+            "pcm_s16le",
+            output_path,
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if result.returncode != 0:
+        os.remove(output_path)
+        error_msg = result.stderr.decode("utf-8", errors="replace").strip() or "ffmpeg audio normalization failed"
+        raise ValueError(f"Uploaded audio could not be decoded: {error_msg}")
+
+    return output_path
 
 
 def _cleanup_temp_files(paths: list[str | None]) -> None:
@@ -647,19 +713,23 @@ async def list_voices() -> dict[str, object]:
 
 @app.post("/v1/voices", response_model=None)
 async def create_voice(name: str = Form(...), audio: UploadFile = File(...)) -> JSONResponse:
-    temp_path: str | None = None
+    temp_paths: list[str | None] = []
     try:
         temp_path = await _save_upload(audio)
+        temp_paths.append(temp_path)
         if temp_path is None:
             raise ValueError("An audio file is required")
-        voice = await asyncio.to_thread(voice_library.add_voice, name, temp_path, audio.filename)
+        normalized_path = await asyncio.to_thread(_normalize_audio_for_voxcpm, temp_path)
+        temp_paths.append(normalized_path)
+        normalized_filename = Path(normalized_path).name if normalized_path else audio.filename
+        voice = await asyncio.to_thread(voice_library.add_voice, name, normalized_path, normalized_filename)
     except ValueError as exc:
         return _openai_error(str(exc), status_code=400)
     except Exception as exc:  # pragma: no cover - integration path
         logger.exception("Saved voice creation failed")
         return _openai_error(str(exc), status_code=500)
     finally:
-        _cleanup_temp_files([temp_path])
+        _cleanup_temp_files(temp_paths)
 
     return JSONResponse(status_code=201, content=voice)
 
@@ -729,6 +799,9 @@ async def create_speech_from_form(
         prompt_audio_path = await _save_upload(prompt_audio)
         reference_audio_path = await _save_upload(reference_audio)
         temp_paths.extend([prompt_audio_path, reference_audio_path])
+        normalized_prompt_audio_path = await asyncio.to_thread(_normalize_audio_for_voxcpm, prompt_audio_path)
+        normalized_reference_audio_path = await asyncio.to_thread(_normalize_audio_for_voxcpm, reference_audio_path)
+        temp_paths.extend([normalized_prompt_audio_path, normalized_reference_audio_path])
 
         request = SpeechRequest(
             model=model,
@@ -743,8 +816,8 @@ async def create_speech_from_form(
             normalize=_parse_bool_form(normalize),
             denoise=_parse_bool_form(denoise),
             prompt_text=(prompt_text or "").strip() or None,
-            prompt_audio_path=prompt_audio_path,
-            reference_audio_path=reference_audio_path,
+            prompt_audio_path=normalized_prompt_audio_path,
+            reference_audio_path=normalized_reference_audio_path,
         )
         audio_bytes, media_type = await asyncio.to_thread(service.synthesize, request)
     except ValueError as exc:

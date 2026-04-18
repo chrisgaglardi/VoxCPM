@@ -2,7 +2,12 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
-from src.voxcpm.openai_server import Settings, VoxCPMOpenAIService
+from src.voxcpm.openai_server import (
+    Settings,
+    VoxCPMOpenAIService,
+    _infer_upload_suffix,
+    _normalize_audio_for_voxcpm,
+)
 
 
 def _settings(**overrides):
@@ -55,6 +60,49 @@ class IdleUnloadTests(unittest.TestCase):
 
         self.assertFalse(unloaded)
         self.assertIs(service._model, marker)
+
+
+class UploadHandlingTests(unittest.TestCase):
+    def test_infer_upload_suffix_uses_content_type_when_filename_has_no_extension(self):
+        upload = SimpleNamespace(filename="recording", content_type="audio/mp4")
+
+        self.assertEqual(_infer_upload_suffix(upload), ".m4a")
+
+    def test_normalize_audio_returns_original_when_ffmpeg_is_missing(self):
+        with mock.patch("src.voxcpm.openai_server.shutil.which", return_value=None):
+            self.assertEqual(_normalize_audio_for_voxcpm("sample.m4a"), "sample.m4a")
+
+    def test_normalize_audio_raises_clear_error_when_ffmpeg_decode_fails(self):
+        created_temp = SimpleNamespace(name="normalized.wav")
+
+        with (
+            mock.patch("src.voxcpm.openai_server.shutil.which", return_value="/usr/bin/ffmpeg"),
+            mock.patch("src.voxcpm.openai_server.tempfile.NamedTemporaryFile") as named_temp,
+            mock.patch("src.voxcpm.openai_server.subprocess.run") as run,
+            mock.patch("src.voxcpm.openai_server.os.remove") as remove,
+        ):
+            named_temp.return_value.__enter__.return_value = created_temp
+            run.return_value = SimpleNamespace(returncode=1, stderr=b"bad audio stream")
+
+            with self.assertRaisesRegex(ValueError, "Uploaded audio could not be decoded"):
+                _normalize_audio_for_voxcpm("sample.m4a")
+
+        remove.assert_called_once_with("normalized.wav")
+
+    def test_normalize_audio_returns_wav_path_on_success(self):
+        created_temp = SimpleNamespace(name="normalized.wav")
+
+        with (
+            mock.patch("src.voxcpm.openai_server.shutil.which", return_value="/usr/bin/ffmpeg"),
+            mock.patch("src.voxcpm.openai_server.tempfile.NamedTemporaryFile") as named_temp,
+            mock.patch("src.voxcpm.openai_server.subprocess.run") as run,
+        ):
+            named_temp.return_value.__enter__.return_value = created_temp
+            run.return_value = SimpleNamespace(returncode=0, stderr=b"")
+
+            normalized = _normalize_audio_for_voxcpm("sample.m4a")
+
+        self.assertEqual(normalized, "normalized.wav")
 
 
 if __name__ == "__main__":

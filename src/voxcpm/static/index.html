@@ -41,7 +41,7 @@
 
       <main id="workspace" class="workspace">
         <section class="editor-column">
-          <form id="tts-form" class="editor-form">
+          <form id="tts-form" class="editor-form" enctype="multipart/form-data">
             <div class="field-group major-field">
               <label for="input">Target Text</label>
               <textarea id="input" name="input" rows="7" placeholder="Write the text you want VoxCPM to speak." required></textarea>
@@ -63,12 +63,12 @@
                 <p class="field-note">Optional. Uses a stored library entry as the reference voice.</p>
 
                 <label for="reference_audio">Reference Audio</label>
-                <input id="reference_audio" name="reference_audio" type="file" accept="audio/*" />
-                <p class="field-note">Optional. Use for timbre cloning when you do not want a saved voice.</p>
+                <input id="reference_audio" name="reference_audio" type="file" accept="audio/*,.wav,.mp3,.m4a,.aac,.flac,.ogg,.webm,.mp4,.3gp,.3g2,.caf" />
+                <p class="field-note">Optional. Use for timbre cloning when you do not want a saved voice. Phone formats like M4A, MP4 audio, WebM, and 3GP are normalized automatically.</p>
 
                 <label for="prompt_audio">Prompt Audio</label>
-                <input id="prompt_audio" name="prompt_audio" type="file" accept="audio/*" />
-                <p class="field-note">Optional. Use with transcript for continuation.</p>
+                <input id="prompt_audio" name="prompt_audio" type="file" accept="audio/*,.wav,.mp3,.m4a,.aac,.flac,.ogg,.webm,.mp4,.3gp,.3g2,.caf" />
+                <p class="field-note">Optional. Use with transcript for continuation. Mobile-recorded clips are accepted.</p>
               </div>
             </div>
 
